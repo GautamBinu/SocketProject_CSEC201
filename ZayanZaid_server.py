@@ -34,7 +34,7 @@ class Server:
             new_directory.mkdir()
             return True
 
-        except FileExistsError:
+        except FileExistsError: # Will stop a directory with the same name from being created (two directories should not have the same name)
             return False
 
     def change_directory(self, name):
@@ -55,7 +55,7 @@ class Server:
         self.current_directory = new_directory # Actually chnage the directory
         return True # Successfully changed the directory
 
-    def rename_folder(self, oldName, newName):
+    def rename_directory(self, oldName, newName):
         old_directory = self.current_directory / oldName
         new_directory = self.current_directory / newName
 
@@ -72,7 +72,21 @@ class Server:
         except FileExistsError:
             return False # Error: A directory with the new name already exists (two directories should not have the same name)
 
+    def delete_directory(self, name):
+        directory_to_delete = self.current_directory / name
 
+        if not directory_to_delete.exists(): # Check if the directory exists
+            return False # Error: Directory does not exist
+
+        if not directory_to_delete.is_dir(): # Check if name is a directory (rather than a file)
+            return False # Error: Not a directory
+
+        try:
+            directory_to_delete.rmdir() # Remove the directory (only works if the directory is empty)
+            return True
+
+        except OSError:
+            return False # Error: Directory is not empty (cannot delete non-empty directories)
 
 # --- MAIN FUNCTION ---
 print("")
@@ -110,10 +124,10 @@ print("Success:", server.change_directory(".."))
 print("Current directory:", server.get_current_directory())
 # Current Directory: / (should still be home directory)
 
-# --Testing renaming folders--
+# --Testing renaming directories--
 #Renaming documents to downloads
 print("Renaming documents to downloads...")
-print("Success:", server.rename_folder("documents", "downloads"))
+print("Success:", server.rename_directory("documents", "downloads"))
 # Renaming a new directory downloads (should fail)
 print("Success:", server.make_directory("downloads"))
 
