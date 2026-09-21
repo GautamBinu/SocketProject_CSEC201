@@ -55,30 +55,67 @@ class Server:
         self.current_directory = new_directory # Actually chnage the directory
         return True # Successfully changed the directory
 
+    def rename_folder(self, oldName, newName):
+        old_directory = self.current_directory / oldName
+        new_directory = self.current_directory / newName
+
+        if not old_directory.exists(): # Check if the directory exists
+            return False # Error: Directory does not exist
+
+        if not old_directory.is_dir(): # Check if name is a directory (rather than a file)
+            return False # Error: Not a directory
+
+        try:
+            old_directory.rename(new_directory)
+            return True
+
+        except FileExistsError:
+            return False # Error: A directory with the new name already exists (two directories should not have the same name)
+
+
 
 # --- MAIN FUNCTION ---
 print("")
 server = Server()
 
 print("Current directory:", server.get_current_directory())
+#/
 
 print("Creating documents directory...")
 print("Success:", server.make_directory("documents"))
+#/
+    #documents/
 
 print("Changing to documents...")
 print("Success:", server.change_directory("documents"))
+#/
+    #documents/
+# Current Directoy: documents
 
 print("Current directory:", server.get_current_directory())
+# Printing the current directory after changing to documents (making sure it doesnt go above home directory)
 
 print("Changing to parent directory...")
 print("Success:", server.change_directory(".."))
+# Changing to parent directory (should be home directory)
+# Current Directory: /
 
 print("Current directory:", server.get_current_directory())
+#Should get home directory (/)
 
 print("Trying to leave home...")
 print("Success:", server.change_directory(".."))
+# Should fail
 
 print("Current directory:", server.get_current_directory())
+# Current Directory: / (should still be home directory)
+
+# --Testing renaming folders--
+#Renaming documents to downloads
+print("Renaming documents to downloads...")
+print("Success:", server.rename_folder("documents", "downloads"))
+# Renaming a new directory downloads (should fail)
+print("Success:", server.make_directory("downloads"))
 
 
 
