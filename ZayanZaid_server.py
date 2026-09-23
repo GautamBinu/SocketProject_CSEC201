@@ -88,6 +88,34 @@ class Server:
         except OSError:
             return False # Error: Directory is not empty (cannot delete non-empty directories)
 
+    def make_file(self, name):
+        new_file = self.current_directory / name
+
+        try:
+            new_file.touch(exist_ok=False) # exist_ok=False needed to stop the code from just creating a new file with that name (doesn't generate an error automatically if the same name)
+            return True
+
+        except FileExistsError: # Will stop a file with the same name from being created (two files should not have the same name)
+            return False
+
+    def delete_file(self, name):
+        file_to_delete = self.current_directory / name
+
+        if not file_to_delete.exists(): #Check if the file exists
+            return False
+
+        if file_to_delete.is_dir(): # Check is name is a directory (rather than a file)
+            return False
+
+        try:
+            file_to_delete.unlink()
+            return True
+        except OSError:
+            return False # File could not be deleted for some reason 
+
+
+
+
 # --- MAIN FUNCTION ---
 print("")
 server = Server()
@@ -131,5 +159,12 @@ print("Success:", server.rename_directory("documents", "downloads"))
 # Renaming a new directory downloads (should fail)
 print("Success:", server.make_directory("downloads"))
 
+# --Testing Deleting a File--
+print("\nSuccess:", server.change_directory("downloads"))
+print("Creating a file inside downloads... X 2")
+print("Success:", server.make_file("Hello.txt"))
+print("Success:", server.make_file("Hello.txt"))
+print("Deleting file inside downloads...")
+print("Success:", server.delete_file("Hello.txt"))
 
 
