@@ -27,16 +27,6 @@ class Server:
         
         return "/" + str(relative_path)
 
-    def make_directory(self, name):
-        new_directory = self.current_directory / name
-
-        try:
-            new_directory.mkdir()
-            return True
-
-        except FileExistsError: # Will stop a directory with the same name from being created (two directories should not have the same name)
-            return False
-
     def change_directory(self, name):
         new_directory = self.current_directory / name
 
@@ -54,6 +44,29 @@ class Server:
 
         self.current_directory = new_directory # Actually chnage the directory
         return True # Successfully changed the directory
+
+    def list_directory(self):
+        items_in_directory = [] # Array[String] - Will hold the names of all the items inside the current directory
+
+        for item in self.current_directory.iterdir():
+            items_in_directory.append(item.name) # For ls, will just need the name, nothing else
+
+        return items_in_directory
+        # The content of item_in_directory can be used by whoever makes the packet/server logic - GAUTUM - DELETE THIS COMMENT WHEN YOU ARE MODIFYING THE CODE
+        
+
+
+    # --- FOLDER FUNCTIONS ---
+
+    def make_directory(self, name):
+        new_directory = self.current_directory / name
+
+        try:
+            new_directory.mkdir()
+            return True
+
+        except FileExistsError: # Will stop a directory with the same name from being created (two directories should not have the same name)
+            return False
 
     def rename_directory(self, oldName, newName):
         old_directory = self.current_directory / oldName
@@ -88,6 +101,7 @@ class Server:
         except OSError:
             return False # Error: Directory is not empty (cannot delete non-empty directories)
 
+    # --- FILE FUNCTIONS ---
     def make_file(self, name):
         new_file = self.current_directory / name
 
@@ -117,54 +131,44 @@ class Server:
 
 
 # --- MAIN FUNCTION ---
-print("")
 server = Server()
 
-print("Current directory:", server.get_current_directory())
-#/
+print("\n# --- TESTING: Creating a folder called 'Documents' ---")
+print("Making Directory (Success):", server.make_directory("Documents"))
 
-print("Creating documents directory...")
-print("Success:", server.make_directory("documents"))
-#/
-    #documents/
+print("\n# --- TESTING: Making a file called 'Testing.txt' in Documents ---")
+print("Changing Directory (Success):", server.change_directory("Documents"))
+print("Making File (Success):", server.make_file("Testing.txt"))
+print("Making File (Fail):", server.make_file("Testing.txt")) # Cannot create another file with the same name in the same folder
 
-print("Changing to documents...")
-print("Success:", server.change_directory("documents"))
-#/
-    #documents/
-# Current Directoy: documents
+print("\n# --- TESTING: Moving back to home directory ---")
+print("Changing Directory (Success):", server.change_directory("..")) # Move to home folder
+print("Currently in:", server.get_current_directory())
+print("Changing Directory (Fail):", server.change_directory("..")) # Cannot move beyond the sandbox
 
-print("Current directory:", server.get_current_directory())
-# Printing the current directory after changing to documents (making sure it doesnt go above home directory)
+print("\n# --- TESTING: Creating 'downloads' and renaming it to 'Downloads' ---")
+print("Creating Directory (Success):", server.make_directory("downloads"))
+print("Renaming Directory (Success):", server.rename_directory("downloads", "Downloads"))
+print("Renaming Directory (Fail):", server.rename_directory("downloads", "Downloads")) # Folder doesnt exist
 
-print("Changing to parent directory...")
-print("Success:", server.change_directory(".."))
-# Changing to parent directory (should be home directory)
-# Current Directory: /
+print("\n# --- TESTING: Creating and removing a 'Desktop' directory ---")
+print("Creating Directory (Success):", server.make_directory("Desktop"))
+print("Deleting Directory (Success):", server.delete_directory("Desktop"))
+print("Deleting Directory (Fail):", server.delete_directory("Desktop")) # Folder doesnt exist
 
-print("Current directory:", server.get_current_directory())
-#Should get home directory (/)
+print("\n# --- TESTING: Listing home directory ---")
+print("Items inside:", server.get_current_directory())
+items = server.list_directory()
+for item in items:
+    print(item)
 
-print("Trying to leave home...")
-print("Success:", server.change_directory(".."))
-# Should fail
 
-print("Current directory:", server.get_current_directory())
-# Current Directory: / (should still be home directory)
 
-# --Testing renaming directories--
-#Renaming documents to downloads
-print("Renaming documents to downloads...")
-print("Success:", server.rename_directory("documents", "downloads"))
-# Renaming a new directory downloads (should fail)
-print("Success:", server.make_directory("downloads"))
 
-# --Testing Deleting a File--
-print("\nSuccess:", server.change_directory("downloads"))
-print("Creating a file inside downloads... X 2")
-print("Success:", server.make_file("Hello.txt"))
-print("Success:", server.make_file("Hello.txt"))
-print("Deleting file inside downloads...")
-print("Success:", server.delete_file("Hello.txt"))
+
+
+
+
+
 
 
