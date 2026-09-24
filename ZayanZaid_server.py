@@ -52,9 +52,7 @@ class Server:
             items_in_directory.append(item.name) # For ls, will just need the name, nothing else
 
         return items_in_directory
-        # The content of item_in_directory can be used by whoever makes the packet/server logic - GAUTUM - DELETE THIS COMMENT WHEN YOU ARE MODIFYING THE CODE
-        
-
+        # The content of item_in_directory can be used by whoever makes the packet/server logic - GAUTUM - DELETE THIS COMMENT WHEN YOU ARE MODIFYING THE CODE  
 
     # --- FOLDER FUNCTIONS ---
 
@@ -102,6 +100,7 @@ class Server:
             return False # Error: Directory is not empty (cannot delete non-empty directories)
 
     # --- FILE FUNCTIONS ---
+
     def make_file(self, name):
         new_file = self.current_directory / name
 
@@ -115,7 +114,7 @@ class Server:
     def delete_file(self, name):
         file_to_delete = self.current_directory / name
 
-        if not file_to_delete.exists(): #Check if the file exists
+        if not file_to_delete.exists(): # Check if the file exists
             return False
 
         if file_to_delete.is_dir(): # Check is name is a directory (rather than a file)
@@ -127,7 +126,24 @@ class Server:
         except OSError:
             return False # File could not be deleted for some reason 
 
+    def open_read(self, name):
+        file_to_read = self.current_directory / name
 
+        if not file_to_read.exists(): # Checks if the file exists
+            return False
+        if file_to_read.is_dir(): # Check if name is a directory (rather than a file)
+            return False
+
+        file_to_read = file_to_read.resolve() # When opening the file using open, need to give the actual path rather than the virtual one
+        file_contents = []
+        try:
+            file = open(file_to_read, 'r') # Opens file
+            for line in file: # Reads the file contents
+                file_contents.append(line)
+            file.close()
+        except:
+            return False
+            
 
 
 # --- MAIN FUNCTION ---
@@ -144,23 +160,30 @@ print("Making File (Fail):", server.make_file("Testing.txt")) # Cannot create an
 print("\n# --- TESTING: Moving back to home directory ---")
 print("Changing Directory (Success):", server.change_directory("..")) # Move to home folder
 print("Currently in:", server.get_current_directory())
-print("Changing Directory (Fail):", server.change_directory("..")) # Cannot move beyond the sandbox
+# print("Changing Directory (Fail):", server.change_directory("..")) # Cannot move beyond the sandbox
 
-print("\n# --- TESTING: Creating 'downloads' and renaming it to 'Downloads' ---")
-print("Creating Directory (Success):", server.make_directory("downloads"))
-print("Renaming Directory (Success):", server.rename_directory("downloads", "Downloads"))
-print("Renaming Directory (Fail):", server.rename_directory("Random", "Downloads")) # Folder doesnt exist
+# print("\n# --- TESTING: Creating 'downloads' and renaming it to 'Downloads' ---")
+# print("Creating Directory (Success):", server.make_directory("downloads"))
+# print("Renaming Directory (Success):", server.rename_directory("downloads", "Downloads"))
+# print("Renaming Directory (Fail):", server.rename_directory("Random", "Downloads")) # Folder doesnt exist
 
-print("\n# --- TESTING: Creating and removing a 'Desktop' directory ---")
-print("Creating Directory (Success):", server.make_directory("Desktop"))
-print("Deleting Directory (Success):", server.delete_directory("Desktop"))
-print("Deleting Directory (Fail):", server.delete_directory("Desktop")) # Folder doesnt exist
+# print("\n# --- TESTING: Creating and removing a 'Desktop' directory ---")
+# print("Creating Directory (Success):", server.make_directory("Desktop"))
+# print("Deleting Directory (Success):", server.delete_directory("Desktop"))
+# print("Deleting Directory (Fail):", server.delete_directory("Desktop")) # Folder doesnt exist
 
-print("\n# --- TESTING: Listing home directory ---")
-print("Items inside:", server.get_current_directory())
-items = server.list_directory()
-for item in items:
-    print(item)
+# print("\n# --- TESTING: Listing home directory ---")
+# print("Items inside:", server.get_current_directory())
+# items = server.list_directory()
+# for item in items:
+#     print(item)
+
+print("\n# --- TESTING: Reading a file ---")
+print("Moving directory to Documents (Success):", server.change_directory("Documents"))
+print("File contents:", server.get_current_directory())
+content = server.open_read("Testing.txt")
+for line in content:
+    print(line)
 
 
 
