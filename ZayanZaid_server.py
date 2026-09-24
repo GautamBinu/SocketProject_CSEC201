@@ -149,7 +149,7 @@ print("Changing Directory (Fail):", server.change_directory("..")) # Cannot move
 print("\n# --- TESTING: Creating 'downloads' and renaming it to 'Downloads' ---")
 print("Creating Directory (Success):", server.make_directory("downloads"))
 print("Renaming Directory (Success):", server.rename_directory("downloads", "Downloads"))
-print("Renaming Directory (Fail):", server.rename_directory("downloads", "Downloads")) # Folder doesnt exist
+print("Renaming Directory (Fail):", server.rename_directory("Random", "Downloads")) # Folder doesnt exist
 
 print("\n# --- TESTING: Creating and removing a 'Desktop' directory ---")
 print("Creating Directory (Success):", server.make_directory("Desktop"))
