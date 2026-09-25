@@ -129,20 +129,21 @@ class Server:
     def open_read(self, name):
         file_to_read = self.current_directory / name
 
-        if not file_to_read.exists(): # Checks if the file exists
-            return False
-        if file_to_read.is_dir(): # Check if name is a directory (rather than a file)
-            return False
-
         file_to_read = file_to_read.resolve() # When opening the file using open, need to give the actual path rather than the virtual one
-        file_contents = []
+
+        if not file_to_read.is_relative_to(self.home_directory.resolve()): # Prevent the file from being outside the virtual sandbox
+            return None
+        if not file_to_read.exists(): # Checks if the file exists
+            return None
+        if file_to_read.is_dir(): # Check if name is a directory (rather than a file)
+            return None
+
         try:
-            file = open(file_to_read, 'r') # Opens file
-            for line in file: # Reads the file contents
-                file_contents.append(line)
-            file.close()
-        except:
-            return False
+            with open(file_to_read, 'r') as file: # Opens file
+                file_contents = file.read()
+            return file_contents
+        except OSError:
+            return None
             
 
 
