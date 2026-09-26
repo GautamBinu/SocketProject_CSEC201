@@ -283,9 +283,168 @@ class Server:
             return False
 
 
-        
+# --- TESTING BLOCK --- | Please don't delete these. I worked very hard on these.
+def testing_the_code():
+    print("\n# --- TESTING: Initial Current Directory ---")
+    print("Current Directory:", server.get_current_directory())
+    # Expected: /
+
+    print("\n# --- TESTING: get_current_directory() ---")
+    print("Current Directory:", server.get_current_directory())
+    # Expected: /
+
+    print("\n# --- TESTING: make_directory() ---")
+    print("Creating Documents:", server.make_directory("Documents"))
+    # Expected: True
+    print("Creating Downloads:", server.make_directory("Downloads"))
+    # Expected: True
+    print("Creating Documents Again:", server.make_directory("Documents"))
+    # Expected: False
+    print("Trying to create a folder outside the sandbox:", server.make_directory("../../Da No Good Bad Bad Folder"))
+    # Expected: False
+
+    print("\n# --- TESTING: list_directory() ---")
+    print("Items in Home Directory:")
+    items = server.list_directory()
+    for item in items:
+        print(item)
+    # Expected:
+    # Documents
+    # Downloads
+
+    print("\n# --- TESTING: count_items() ---")
+    print("Number of Items:", server.count_items())
+    # Expected: 2
+
+    print("\n# --- TESTING: current_directory() ---")
+    print("Changing to Documents:", server.change_directory("Documents"))
+    # Expected: True
+    print("Current Directory:", server.get_current_directory())
+    # Expected: /Documents
+    print("Changing to DatRandomFolder:", server.change_directory("DatRandomFolder"))
+    # Expected: False
+    print("Trying to leave the virtual sandbox:", server.change_directory("../../"))
+    # Expected: False
+    print("Returning to Home:", server.change_directory(".."))
+    # Expected: True
+    print("Current Directory:", server.get_current_directory())
+    # Expected: /
+
+    print("\n# --- TESTING: make_file() ---")
+    print("Creating DaTest.txt:", server.make_file("DaTest.txt"))
+    # Expected: True
+    print("Creating DaTest.txt Again:", server.make_file("DaTest.txt"))
+    # Expected: False
+    print("Trying to create a file outside the sandbox:", server.make_file("../../NaughtyNaughty.txt"))
+    # Expected: False
+
+    print("\n# --- TESTING: check_type() ---")
+    print("Checking Test.txt:", server.check_type("Test.txt"))
+    # Expected: file
+    print("Checking Documents:", server.check_type("Documents"))
+    # Expected: directory
+    print("Checking WhereIsIt.txt:", server.check_type("WhereIsIt.txt"))
+    # Expected: False
+    print("Checking Another Naughty File:", server.check_type("../../NaughtyAgain.txt"))
+    # Expected: False
+
+    print("\n# --- TESTING: open_write() ---")
+    print("Opening Output.txt:", server.open_write("Output.txt"))
+    # Expected: True
+    print("Opening Documents as a file:", server.open_write("Documents"))
+    # Expected: False
+    print("Opening Output.txt Again:", server.open_write("Output.txt"))
+    # Expected: True
+    print("Trying to escape sandbox:", server.open_write("../../TooMuchNaughty.txt"))
+    # Expected: False
+
+    print("\n# --- TESTING: write_data() ---")
+
+    print("Writing First DP:", server.write_data("Halloo?"))
+    # Expected: True
+    print("Writing Second DP:", server.write_data(" New Phone"))
+    # Expected: True
+    print("Writing Third DP:", server.write_data(" Who Dis?"))
+    # Expected: True
+    print("Output.txt Contents:", server.open_read("Output.txt"))
+    # Expected: Halloo? New Phone Who Dis?
+
+    print("\n# --- TESTING: open_read() ---")
+    print("Reading Output.txt:", server.open_read("Output.txt"))
+    # Expected: Halloo? New Phone Who Dis?
+    print("Reading Documents:", server.open_read("Documents"))
+    # Expected: None
+    print("Reading PeekABoo.txt:", server.open_read("PeekABoo.txt"))
+    # Expected: None
+    print("Trying to read outside sandbox:", server.open_read("../../NaughtyIDK_howMuch.txt"))
+    # Expected: None
+
+    print("\n# --- TESTING: New open_write() ---")
+    print("Opening Output.txt Again:", server.open_write("Output.txt"))
+    # Expected: True
+    print("Writing New Data:", server.write_data("Imma put in some more yap here"))
+    # Expected: True
+    print("Output.txt Contents:", server.open_read("Output.txt"))
+    # Expected: Imma put in some more yap here
+
+    print("\n# --- TESTING: word_count() ---")
+    print("Opening WCTest.txt:", server.open_write("WCTest.txt"))
+    # Expected: True
+    print("Writing First Line:", server.write_data("Hello!\n"))
+    # Expected: True
+    print("Writing Second Line:", server.write_data("New Phone.\n"))
+    # Expected: True
+    print("Writing Third Line:", server.write_data("Who dis?"))
+    # Expected: True
+    print("WCTest.txt Counts:", server.word_count("WCTest.txt"))
+    # Expected: (3, 5, [just some random val])
+    print("WC on Documents:", server.word_count("Documents"))
+    # Expected: False
+    print("WC on NonExistent.txt:", server.word_count("NonExistent.txt"))
+    # Expected: False
+    print("WC Outside Sandbox:", server.word_count("../../HorridHenry.txt"))
+    # Expected: False
+
+    print("\n# --- TESTING: rename_directory() ---")
+    print("Renaming Downloads to Files:", server.rename_directory("Downloads", "Files"))
+    # Expected: True
+    print("Renaming WhereDaFolder:", server.rename_directory("WhereDaFolder", "BabaYaga"))
+    # Expected: False
+    print("Renaming Files to already existing Documents:", server.rename_directory("Files", "Documents"))
+    # Expected: False
+    print("Trying to rename outside sandbox:", server.rename_directory("Files", "../../DontBeHorridHenry"))
+    # Expected: False
+    print("Checking Files:", server.check_type("Files"))
+    # Expected: directory
+
+    print("\n# --- TESTING: remove_directory() ---")
+    print("Deleting Files:", server.delete_directory("Files"))
+    # Expected: True
+    print("Deleting Files Again:", server.delete_directory("Files"))
+    # Expected: False
+    print("Deleting Documents:", server.delete_directory("Documents"))
+    # Expected: False because Documents still exists and contains no files
+    print("Trying to delete outside sandbox:", server.delete_directory("../../"))
+    # Expected: False
+
+    print("\n# --- TESTING: delete_file() ---")
+    print("Deleting Test.txt:", server.delete_file("Test.txt"))
+    # Expected: True
+    print("Deleting Test.txt Again:", server.delete_file("Test.txt"))
+    # Expected: False
+    print("Trying to delete a directory:", server.delete_file("Documents"))
+    # Expected: False
+    print("Trying to delete outside the sandbox:", server.delete_file("../../StopBeingHorridHenry.txt"))
+    # Expected: False
+
+    print("\n# --- TESTING: Da Directory After My Shenanigins ---")
+    print("Current Directory:", server.get_current_directory())
+    print("Items Remaining:")
+    items = server.list_directory()
+    for item in items:
+        print(item)
+    print("Final Item Count:", server.count_items())       
         
 
 # --- MAIN FUNCTION ---
-server = Server()
-
+server = Server() # Just need to create the object that will have all the neccessary functions in them
