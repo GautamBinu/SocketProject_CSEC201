@@ -67,6 +67,24 @@ class Server:
             count_items += 1
         return count_items
 
+    # file (extra function) | Will check to see if it a file or directory
+    def check_type(self, name):
+        name_to_check = self.current_directory / name
+        name_to_check = name_to_check.resolve()
+
+        if not name_to_check.is_relative_to(self.home_directory.resolve()):
+            return False
+
+        if not name_to_check.exists():
+            return False # Doesn't exist
+
+        if name_to_check.is_dir(): # Directory check
+            return "directory"
+
+        if name_to_check.is_file(): # File check
+            return "file"
+
+        return None  # Not a file or directory
         
 
     # --- FOLDER FUNCTIONS ---
