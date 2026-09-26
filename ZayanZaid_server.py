@@ -85,7 +85,31 @@ class Server:
             return "file"
 
         return None  # Not a file or directory
-        
+
+    # wc (extra function) | returns the no. of lines, words, and bytes in a file
+    def word_count(self, name):
+        file_to_count = self.current_directory / name
+
+        if not file_to_count.is_relative_to(self.home_directory.resolve()):
+            return False # Outisde sandbox
+        if not file_to_count.exists():
+            return False # Doesn't exist
+        if file_to_count.is_dir():
+            return False # Is a directory
+
+        try:
+            with open(file_to_count, 'r') as file:
+                lines = file.readlines() # Will read all the lines of the file into the lines list
+
+            line_count = len(lines)
+            word_count = sum(len(line.split()) for line in lines)
+            byte_count = file_to_count.stat().st_size  # Gets the file size in bytes
+
+            return line_count, word_count, byte_count # Returns a tuple
+        except OSError:
+            return False
+
+
 
     # --- FOLDER FUNCTIONS ---
 
@@ -302,3 +326,19 @@ items = server.list_directory()
 for item in items:
     print(item)
 print("Count =", server.count_items())
+
+print("\n# --- TESTING: Checking the word_count function ---")
+print("\nCreating WCTest.txt:")
+print("Opening WCTest.txt:", server.open_write("WCTest.txt"))
+print("\nWriting test data:")
+print("Writing first line:", server.write_data("this da first line\n"))
+print("Writing second line:", server.write_data("this da second line\n"))
+print("Writing third line:", server.write_data("da last line"))
+print("WCTest.txt counts:", server.word_count("WCTest.txt"))
+print("\nTesting WC on a directory:")
+print("Documents counts:", server.word_count("Documents"))
+print("\nTesting WC on a file that does not exist:")
+print("Missing.txt counts:", server.word_count("Missing.txt"))
+print("\nTesting WC outside the sandbox:")
+print("Outside file counts:", server.word_count("../../outside.txt"))
+
