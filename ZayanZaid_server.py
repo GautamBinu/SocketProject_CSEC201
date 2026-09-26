@@ -22,7 +22,7 @@ class Server:
         self.write_file = None # This will hold the file created/accessed by the open_write function so that when the data packet is recieved, it's contents can be put in the file
         self.write_started = False # Allows us to know if we should write or append to a file
 
-    # pwd (extra function)
+    # pwd (extra function) | Gives the current directory (where is it)
     def get_current_directory(self): # Note: This function will return a virtual "current directory" rather than the REAL actual directory (of the computer)
         relative_path = self.current_directory.relative_to(self.home_directory)
 
@@ -50,7 +50,7 @@ class Server:
         self.current_directory = new_directory # Actually chnage the directory
         return True # Successfully changed the directory
 
-    # ls (extra function)
+    # ls (extra function) | Gives a list of all the items in the current directory
     def list_directory(self):
         items_in_directory = [] # Array[String] - Will hold the names of all the items inside the current directory
 
@@ -59,6 +59,15 @@ class Server:
 
         return items_in_directory
         # The content of item_in_directory can be used by whoever makes the packet/server logic - GAUTUM - DELETE THIS COMMENT WHEN YOU ARE MODIFYING THE CODE  
+
+    # count (extra functions) | Will list the number of items in the current directory
+    def count_items(self):
+        count_items = 0 # Integer
+        for item in self.current_directory.iterdir():
+            count_items += 1
+        return count_items
+
+        
 
     # --- FOLDER FUNCTIONS ---
 
@@ -254,14 +263,24 @@ print("Reading Output.txt:", server.open_read("Output.txt"))
 print("Creating Output.txt again:", server.open_write("Output.txt"))  # Trying to create the file again.
 print("Trying to escape sandbox:", server.open_write("../../outside.txt"))  # Testing by trying to create a file outside the home directory
 
-print("\n# --- TESTING: DATA PACKETS ---")
+print("\n# --- TESTING: Data packets ---")
 print("Opening DataTest.txt:", server.open_write("DataTest.txt"))
 print("First DP:", server.write_data("Hello"))  # Write the first piece of data.
 print("Second DP:", server.write_data(" World"))  # Write the second piece of data.
 print("Third DP:", server.write_data("!"))  # Write the third piece of data.
 print("Final contents:", server.open_read("DataTest.txt"))  # Read the file to verify all data was stored.
 
-print("\n# --- TESTING: NEW WRITE SESSION ---")
+print("\n# --- TESTING: New write session ---")
 print("Opening DataTest.txt again:", server.open_write("DataTest.txt"))  # Start another writing session.
 print("New first DP:", server.write_data("Fresh data"))  # Send the first DP of the new session.
 print("Final contents:", server.open_read("DataTest.txt"))  # Read the file to verify that the previous contents were replaced.
+
+print("\n# --- TESTING: Checking the count_items function ---")
+print("Changing Directory to home:", server.change_directory(".."))
+print("Changing Directory to home:", server.change_directory("..")) # Just however many it takes
+print("Moving directory to Documents (Success):", server.change_directory("Documents"))
+print("Items inside:", server.get_current_directory())
+items = server.list_directory()
+for item in items:
+    print(item)
+print("Count =", server.count_items())
