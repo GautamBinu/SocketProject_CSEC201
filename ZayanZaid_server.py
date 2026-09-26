@@ -62,10 +62,10 @@ class Server:
 
     # count (extra functions) | Will list the number of items in the current directory
     def count_items(self):
-        count_items = 0 # Integer
+        count = 0 # Integer
         for item in self.current_directory.iterdir():
-            count_items += 1
-        return count_items
+            count += 1
+        return count
 
     # file (extra function) | Will check to see if it a file or directory
     def check_type(self, name):
@@ -109,13 +109,17 @@ class Server:
         except OSError:
             return False
 
-
+#DO GIT PULL - Dont del this line, just remove the comment (make the line blank)
 
     # --- FOLDER FUNCTIONS ---
 
     # mkdir
     def make_directory(self, name):
         new_directory = self.current_directory / name
+
+        new_directory = new_directory.resolve()
+        if not new_directory.is_relative_to(self.home_directory.resolve()): # Check if the path escapes the sandbox.
+            return False
 
         try:
             new_directory.mkdir()
@@ -128,6 +132,13 @@ class Server:
     def rename_directory(self, oldName, newName):
         old_directory = self.current_directory / oldName
         new_directory = self.current_directory / newName
+
+        old_directory = old_directory.resolve()
+        new_directory = new_directory.resolve()
+        if not old_directory.is_relative_to(self.home_directory.resolve()):
+            return False
+        if not new_directory.is_relative_to(self.home_directory.resolve()):
+            return False
 
         if not old_directory.exists(): # Check if the directory exists
             return False # Error: Directory does not exist
@@ -146,6 +157,10 @@ class Server:
     def delete_directory(self, name):
         directory_to_delete = self.current_directory / name
 
+        directory_to_delete = directory_to_delete.resolve()
+        if not directory_to_delete.is_relative_to(self.home_directory.resolve()):
+            return False
+
         if not directory_to_delete.exists(): # Check if the directory exists
             return False # Error: Directory does not exist
 
@@ -161,9 +176,13 @@ class Server:
 
     # --- FILE FUNCTIONS ---
 
-    # REDUNDANT - Can remove later when cleaning up the code - Keep it in jic rn
+    # touch (extra function) | will create a new file if it doesn't exist (but does not open it for reading)
     def make_file(self, name):
         new_file = self.current_directory / name
+
+        new_file = new_file.resolve()
+        if not new_file.is_relative_to(self.home_directory.resolve()):
+            return False
 
         try:
             new_file.touch(exist_ok=False) # exist_ok=False needed to stop the code from just creating a new file with that name (doesn't generate an error automatically if the same name)
@@ -175,6 +194,11 @@ class Server:
     # del
     def delete_file(self, name):
         file_to_delete = self.current_directory / name
+
+        file_to_delete = file_to_delete.resolve()
+        if not file_to_delete.is_relative_to(self.home_directory.resolve()):
+            return False
+
 
         if not file_to_delete.exists(): # Check if the file exists
             return False
@@ -264,81 +288,4 @@ class Server:
 
 # --- MAIN FUNCTION ---
 server = Server()
-
-print("\n# --- TESTING: Creating a folder called 'Documents' ---")
-print("Making Directory (Success):", server.make_directory("Documents"))
-
-print("\n# --- TESTING: Making a file called 'Testing.txt' in Documents ---")
-print("Changing Directory (Success):", server.change_directory("Documents"))
-print("Making File (Success):", server.make_file("Testing.txt"))
-print("Making File (Fail):", server.make_file("Testing.txt")) # Cannot create another file with the same name in the same folder
-
-print("\n# --- TESTING: Moving back to home directory ---")
-print("Changing Directory (Success):", server.change_directory("..")) # Move to home folder
-print("Currently in:", server.get_current_directory())
-# print("Changing Directory (Fail):", server.change_directory("..")) # Cannot move beyond the sandbox
-
-# print("\n# --- TESTING: Creating 'downloads' and renaming it to 'Downloads' ---")
-# print("Creating Directory (Success):", server.make_directory("downloads"))
-# print("Renaming Directory (Success):", server.rename_directory("downloads", "Downloads"))
-# print("Renaming Directory (Fail):", server.rename_directory("Random", "Downloads")) # Folder doesnt exist
-
-# print("\n# --- TESTING: Creating and removing a 'Desktop' directory ---")
-# print("Creating Directory (Success):", server.make_directory("Desktop"))
-# print("Deleting Directory (Success):", server.delete_directory("Desktop"))
-# print("Deleting Directory (Fail):", server.delete_directory("Desktop")) # Folder doesnt exist
-
-# print("\n# --- TESTING: Listing home directory ---")
-# print("Items inside:", server.get_current_directory())
-# items = server.list_directory()
-# for item in items:
-#     print(item)
-
-print("\n# --- TESTING: Reading a file ---")
-print("Moving directory to Documents (Success):", server.change_directory("Documents"))
-contents = server.open_read("Testing.txt")
-print("File contents:", contents)
-
-print("\n# --- TESTING: Testing the open_write function ---")
-print("Creating Output.txt:", server.open_write("Output.txt"))
-print("Reading Output.txt:", server.open_read("Output.txt"))
-print("Creating Output.txt again:", server.open_write("Output.txt"))  # Trying to create the file again.
-print("Trying to escape sandbox:", server.open_write("../../outside.txt"))  # Testing by trying to create a file outside the home directory
-
-print("\n# --- TESTING: Data packets ---")
-print("Opening DataTest.txt:", server.open_write("DataTest.txt"))
-print("First DP:", server.write_data("Hello"))  # Write the first piece of data.
-print("Second DP:", server.write_data(" World"))  # Write the second piece of data.
-print("Third DP:", server.write_data("!"))  # Write the third piece of data.
-print("Final contents:", server.open_read("DataTest.txt"))  # Read the file to verify all data was stored.
-
-print("\n# --- TESTING: New write session ---")
-print("Opening DataTest.txt again:", server.open_write("DataTest.txt"))  # Start another writing session.
-print("New first DP:", server.write_data("Fresh data"))  # Send the first DP of the new session.
-print("Final contents:", server.open_read("DataTest.txt"))  # Read the file to verify that the previous contents were replaced.
-
-print("\n# --- TESTING: Checking the count_items function ---")
-print("Changing Directory to home:", server.change_directory(".."))
-print("Changing Directory to home:", server.change_directory("..")) # Just however many it takes
-print("Moving directory to Documents (Success):", server.change_directory("Documents"))
-print("Items inside:", server.get_current_directory())
-items = server.list_directory()
-for item in items:
-    print(item)
-print("Count =", server.count_items())
-
-print("\n# --- TESTING: Checking the word_count function ---")
-print("\nCreating WCTest.txt:")
-print("Opening WCTest.txt:", server.open_write("WCTest.txt"))
-print("\nWriting test data:")
-print("Writing first line:", server.write_data("this da first line\n"))
-print("Writing second line:", server.write_data("this da second line\n"))
-print("Writing third line:", server.write_data("da last line"))
-print("WCTest.txt counts:", server.word_count("WCTest.txt"))
-print("\nTesting WC on a directory:")
-print("Documents counts:", server.word_count("Documents"))
-print("\nTesting WC on a file that does not exist:")
-print("Missing.txt counts:", server.word_count("Missing.txt"))
-print("\nTesting WC outside the sandbox:")
-print("Outside file counts:", server.word_count("../../outside.txt"))
 
