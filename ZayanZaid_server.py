@@ -7,6 +7,11 @@
 # First Last | UID
 
 # --- IMPORTS ---
+import os
+import socket
+import struct
+import subprocess
+import threading
 from pathlib import Path
 
 # --- INITIALIZATION ---
@@ -448,3 +453,231 @@ def testing_the_code():
 
 # --- MAIN FUNCTION ---
 server = Server() # Just need to create the object that will have all the neccessary functions in them
+
+# --- RFMP NETWORKING & PACKET LOGIC ---
+
+def build(*fields):
+    return ",".join(fields)
+
+
+def parse(raw, maxFields):
+    return raw.split(",", maxFields - 1)
+
+
+def recv_exact(sock, n):
+    data = b""
+
+    while len(data) < n:
+        chunk = sock.recv(n - len(data))
+        if chunk == b"":
+            raise ConnectionError("Connection closed")
+        data += chunk
+    return data
+
+
+def recv_frame(sock):
+    header = recv_exact(sock, 4)
+    length = struct.unpack("!I", header)[0]
+    data = recv_exact(sock, length)
+    return data.decode("utf-8")
+
+
+def send_frame(sock, text):
+    data = text.encode("utf-8")
+    length = struct.pack("!I", len(data))
+    sock.sendall(length + data)
+
+
+def run_system_command(command_name):
+    command_name = command_name.strip()
+    if not command_name:
+        return "EE,4,No system command provided"
+
+    try:
+        if os.name == "nt":
+            command_map = {
+                "whoami": "whoami",
+                "date": "date /T",
+                "ps": "tasklist",
+                "ls": "dir",
+                "pwd": "cd",
+            }
+            command_to_run = command_map.get(command_name.lower(), command_name)
+        else:
+            command_to_run = command_name
+
+        result = subprocess.run(
+            command_to_run,
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        output = (result.stdout or "").strip()
+        if not output and result.stderr:
+            output = result.stderr.strip()
+        if not output:
+            output = "Command completed successfully"
+        return f"SC,{output}"
+    except Exception as exc:
+        return f"EE,4,{exc}"
+
+
+def route_prompt_command(server_obj, command_text):
+    if command_text is None:
+        return "EE,4,No command provided"
+
+    text = command_text.strip()
+    if text == "":
+        return "EE,4,No command provided"
+
+    command_parts = text.split(None, 2)
+    command = command_parts[0].lower()
+
+    if command == "mkdir":
+        if len(command_parts) < 2:
+            return "EE,4,Missing directory name"
+        return "SC,Directory created" if server_obj.make_directory(command_parts[1]) else "EE,4,Failed to create directory"
+
+    if command == "cd":
+        if len(command_parts) < 2:
+            return "EE,4,Missing directory name"
+        return "SC,Directory changed" if server_obj.change_directory(command_parts[1]) else "EE,4,Failed to change directory"
+
+    if command == "rmdir":
+        if len(command_parts) < 2:
+            return "EE,4,Missing directory name"
+        return "SC,Directory deleted" if server_obj.delete_directory(command_parts[1]) else "EE,4,Failed to delete directory"
+
+    if command == "del":
+        if len(command_parts) < 2:
+            return "EE,4,Missing file name"
+        return "SC,File deleted" if server_obj.delete_file(command_parts[1]) else "EE,4,Failed to delete file"
+
+    if command == "ren":
+        if len(command_parts) < 3:
+            return "EE,4,Missing old and new names"
+        old_name, new_name = command_parts[1], command_parts[2]
+        return "SC,File renamed" if server_obj.rename_directory(old_name, new_name) else "EE,4,Failed to rename"
+
+    if command == "ls":
+        items = server_obj.list_directory()
+        return "SC," + ("\n".join(items) if items else "")
+
+    if command == "pwd":
+        return f"SC,{server_obj.get_current_directory()}"
+
+    if command in {"whoami", "date", "ps"}:
+        return run_system_command(command)
+
+    return "EE,4,Unknown command"
+
+
+def handle_packet(server_obj, packet):
+    if packet == "":
+        return "EE,4,Empty packet"
+
+    if packet == "End":
+        return "End"
+
+    fields = packet.split(",", 3)
+    packet_type = fields[0]
+
+    if packet_type == "SS":
+        if len(fields) >= 4 and fields[1] == "RFMP" and fields[2] == "v1.0" and fields[3] == "0":
+            return "CC"
+        return "EE,0,Invalid handshake"
+
+    if packet_type == "CM":
+        if len(fields) < 3:
+            return "EE,4,Malformed command packet"
+
+        action = fields[1]
+        payload = fields[2]
+
+        if action == "prompt":
+            return route_prompt_command(server_obj, payload)
+
+        if action == "openRead":
+            data = server_obj.open_read(payload)
+            if data is None:
+                return "EE,1,File not found or access denied."
+            return f"SC,{data}"
+
+        if action == "openWrite":
+            return "SC" if server_obj.open_write(payload) else "EE,2,Cannot open file for writing."
+
+        return "EE,4,Unknown command packet"
+
+    if packet_type == "DP":
+        if len(fields) < 2:
+            return "EE,3,Failed to write data."
+        text = fields[1]
+        return "SC" if server_obj.write_data(text) else "EE,3,Failed to write data."
+
+    return "EE,4,Unknown packet type"
+
+
+def handle_client(client_socket, server_obj):
+    try:
+        handshake = recv_frame(client_socket)
+        if handshake == "End":
+            return
+
+        response = handle_packet(server_obj, handshake)
+        if response == "End":
+            return
+
+        if response != "CC":
+            send_frame(client_socket, response)
+            return
+
+        send_frame(client_socket, "CC")
+
+        while True:
+            packet = recv_frame(client_socket)
+            if packet == "End":
+                break
+
+            response = handle_packet(server_obj, packet)
+            if response == "End":
+                break
+
+            if response:
+                send_frame(client_socket, response)
+
+    except (ConnectionError, OSError, TimeoutError):
+        pass
+    finally:
+        try:
+            client_socket.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        client_socket.close()
+
+
+def start_server(host="0.0.0.0", port=9009, backlog=5):
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.bind((host, port))
+    server_socket.listen(backlog)
+    print(f"RFMP server listening on {host}:{port}")
+
+    try:
+        while True:
+            client_socket, client_address = server_socket.accept()
+            print(f"Client connected: {client_address}")
+            thread = threading.Thread(
+                target=handle_client,
+                args=(client_socket, server),
+                daemon=True,
+            )
+            thread.start()
+    except KeyboardInterrupt:
+        print("\nServer stopped.")
+    finally:
+        server_socket.close()
+
+
+if __name__ == "__main__":
+    start_server()
