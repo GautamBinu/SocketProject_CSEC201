@@ -123,6 +123,22 @@ def decrypt_text(session, text):
         return caesar_decrypt(session["key"], text)  # Caesar shift decryption
     return text  # fallback, should never happen
 
+def format_session_key(algorithm, key):
+    if algorithm == "AES":
+        return key.hex()
+    return str(key)
+
+def log_event(label, message, client_address=None):
+    prefix = f"[{label}]"
+    if client_address is not None:
+        prefix += f", {client_address}"
+    print(f"{prefix}: {message}", flush=True)
+    print("", flush=True)
+
+
+def log_secure_event(message, client_address=None):
+    log_event("SECURE", message, client_address)
+
 # ============================================================
 # END OF CRYPTO HELPERS
 # ============================================================
@@ -718,6 +734,8 @@ def handle_packet(server_obj, packet, session):
             if data is None:
                 return "EE,1,File not found or access denied."
             # if secure mode is on, encrypt the file contents before sending
+            if session["secure"]:
+                log_secure_event(f"Sending encrypted openRead response for {payload}", session.get("client_address"))
             data = encrypt_text(session, data)
             return f"SC,{data}"
 
@@ -732,7 +750,11 @@ def handle_packet(server_obj, packet, session):
         text = fields[1]  # the raw or encrypted text from the client
         # if secure mode is on, decrypt the text before writing to disk
         try:
+            if session["secure"]:
+                log_secure_event(f"Decrypting DP payload: {text[:80]}{'...' if len(text) > 80 else ''}", session.get("client_address"))
             text = decrypt_text(session, text)  # decrypt (or pass-through if unsecured)
+            if session["secure"]:
+                log_secure_event(f"DP plaintext after decrypt: {text[:80]}{'...' if len(text) > 80 else ''}", session.get("client_address"))
         except Exception:
             return "EE,3,Failed to write data."  # decryption failed
         return "SC" if server_obj.write_data(text) else "EE,3,Failed to write data."
@@ -741,6 +763,8 @@ def handle_packet(server_obj, packet, session):
 
 
 def handle_client(client_socket, server_obj):
+    client_address = client_socket.getpeername()
+
     # each client gets its own session dictionary so threads don't interfere
     session = {
         "secure": False,       # whether encryption is active for this connection
@@ -748,6 +772,7 @@ def handle_client(client_socket, server_obj):
         "key": None,           # the session key (bytes for AES, int for Caesar)
         "username": None,      # the client's OS username
         "client_pub": None,    # the client's public key (stored, not used to encrypt)
+        "client_address": client_address,
     }
 
     try:
@@ -775,6 +800,7 @@ def handle_client(client_socket, server_obj):
 
             # step 2: send CC,<server_public_key_b64> to the client
             server_pub_b64 = public_key_to_b64(server_public_key)  # serialize to base64
+            log_secure_event(f"Server public key (base64): {server_pub_b64}", client_address)
             send_frame(client_socket, build("CC", server_pub_b64))
 
             # step 3: read the EC packet from the client
@@ -789,6 +815,7 @@ def handle_client(client_socket, server_obj):
             algorithm = ec_fields[1]          # "AES" or "Caesar"
             enc_key_b64 = ec_fields[2]        # the encrypted session key in base64
             user_and_pub = ec_fields[3]        # "username:client_public_key_b64"
+            log_secure_event(f"EC packet received: algorithm={algorithm}, encrypted_key={enc_key_b64[:60]}...", client_address)
 
             # validate the algorithm choice
             if algorithm not in ("AES", "Caesar"):
@@ -803,6 +830,7 @@ def handle_client(client_socket, server_obj):
 
             username = user_and_pub[:colon_pos]             # everything before the colon
             client_pub_b64 = user_and_pub[colon_pos + 1:]   # everything after the colon
+            log_secure_event(f"Client identity: {username}, public_key={client_pub_b64[:60]}...", client_address)
 
             try:
                 # decrypt the session key using the server's private RSA key
@@ -810,6 +838,8 @@ def handle_client(client_socket, server_obj):
             except Exception:
                 send_frame(client_socket, build("EE", "0", "Failed to decrypt session key"))
                 return
+
+            log_secure_event(f"RSA-decrypted session key bytes: {raw_key.hex()}", client_address)
 
             # convert the raw key bytes into the right type for the algorithm
             if algorithm == "AES":
@@ -825,6 +855,8 @@ def handle_client(client_socket, server_obj):
                     send_frame(client_socket, build("EE", "0", "Invalid Caesar key"))
                     return
 
+            log_secure_event(f"Session key established: algorithm={algorithm}, key={format_session_key(algorithm, session_key)}", client_address)
+
             # store the client's public key (just for logging, not used for encryption)
             try:
                 client_pub_key = public_key_from_b64(client_pub_b64)  # deserialize to verify it is valid
@@ -839,9 +871,7 @@ def handle_client(client_socket, server_obj):
             session["username"] = username
             session["client_pub"] = client_pub_key
 
-            # print info about the connection (but never print the session key!)
-            print(f"Secured connection: user={username}, algorithm={algorithm}")
-            print(f"Client public key: {client_pub_b64[:40]}...")  # show just a snippet
+            log_secure_event(f"Secure session ready: user={username}, algorithm={algorithm}", client_address)
 
             # step 4: tell the client the setup was successful
             send_frame(client_socket, "SC")
@@ -861,6 +891,8 @@ def handle_client(client_socket, server_obj):
                 break
 
             if response:
+                if session["secure"] and response.startswith("SC,"):
+                    log_secure_event(f"Sending encrypted response: {response[:120]}{'...' if len(response) > 120 else ''}", client_address)
                 send_frame(client_socket, response)  # send the result back
 
     except (ConnectionError, OSError, TimeoutError):
@@ -879,12 +911,12 @@ def start_server(host="127.0.0.1", port=9009, backlog=5):
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind((host, port))
     server_socket.listen(backlog)
-    print(f"RFMP server listening on {host}:{port}")
+    log_event("SERVER", f"RFMP server listening on {host}:{port}", (host, port))
 
     try:
         while True:
             client_socket, client_address = server_socket.accept()
-            print(f"Client connected: {client_address}")
+            log_event("CLIENT", "Client connected", client_address)
             thread = threading.Thread(
                 target=handle_client,
                 args=(client_socket, server),
