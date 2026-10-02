@@ -13,6 +13,119 @@ import struct
 import subprocess
 import threading
 from pathlib import Path
+import base64                     # needed to encode binary crypto data as text
+import secrets                    # cryptographically secure random numbers
+
+# --- CRYPTO IMPORTS ---
+from cryptography.hazmat.primitives.asymmetric import rsa, padding as asym_padding  # RSA key gen and OAEP padding
+from cryptography.hazmat.primitives import hashes, serialization                     # SHA-256 and key serialization
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM                      # AES-256-GCM authenticated encryption
+
+# ============================================================
+# CRYPTO HELPER FUNCTIONS  (identical copy lives in the client)
+# ============================================================
+
+def generate_rsa_keypair():
+    # generate a 2048-bit RSA private key with public exponent 65537
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,  # standard public exponent, fast and secure
+        key_size=2048,          # 2048 bits is the minimum recommended size
+    )
+    return private_key  # the public key can be derived from the private key
+
+def public_key_to_b64(public_key):
+    # serialize the public key to DER (binary) format, then base64-encode it
+    der_bytes = public_key.public_bytes(
+        encoding=serialization.Encoding.DER,                        # compact binary format
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,      # standard public key structure
+    )
+    return base64.b64encode(der_bytes).decode("ascii")  # return a plain text string
+
+def public_key_from_b64(b64_string):
+    # reverse of public_key_to_b64: decode base64, then load the DER public key
+    der_bytes = base64.b64decode(b64_string)  # turn the text back into raw bytes
+    return serialization.load_der_public_key(der_bytes)  # reconstruct the key object
+
+def rsa_encrypt_session_key(public_key, key_bytes):
+    # encrypt a small piece of data (the session key) with the recipient's public key
+    ciphertext = public_key.encrypt(
+        key_bytes,
+        asym_padding.OAEP(                                # OAEP is the modern, secure RSA padding
+            mgf=asym_padding.MGF1(algorithm=hashes.SHA256()),  # mask generation uses SHA-256
+            algorithm=hashes.SHA256(),                         # hash algorithm for OAEP label
+            label=None,                                        # no label needed
+        ),
+    )
+    return base64.b64encode(ciphertext).decode("ascii")  # return base64 text so it fits in a packet
+
+def rsa_decrypt_session_key(private_key, b64_string):
+    # decrypt the session key that was encrypted with our public key
+    ciphertext = base64.b64decode(b64_string)  # decode the base64 text back to raw bytes
+    plaintext = private_key.decrypt(
+        ciphertext,
+        asym_padding.OAEP(                                # must use the same padding as encryption
+            mgf=asym_padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None,
+        ),
+    )
+    return plaintext  # raw bytes of the session key
+
+def aes_encrypt(key, text):
+    # encrypt a string using AES-256-GCM with a fresh random nonce
+    aesgcm = AESGCM(key)                        # create an AES-GCM cipher with the 32-byte key
+    nonce = secrets.token_bytes(12)              # GCM needs a unique 12-byte nonce every time
+    ciphertext = aesgcm.encrypt(nonce, text.encode("utf-8"), None)  # encrypt; tag is appended automatically
+    return base64.b64encode(nonce + ciphertext).decode("ascii")     # pack nonce+ciphertext together as base64
+
+def aes_decrypt(key, b64_text):
+    # decrypt base64(nonce + ciphertext_with_tag) back into a string
+    raw = base64.b64decode(b64_text)   # decode from base64 to raw bytes
+    nonce = raw[:12]                   # first 12 bytes are the nonce
+    ciphertext = raw[12:]              # the rest is ciphertext + authentication tag
+    aesgcm = AESGCM(key)              # recreate the cipher with the same key
+    plaintext = aesgcm.decrypt(nonce, ciphertext, None)  # decrypt and verify tag
+    return plaintext.decode("utf-8")   # convert bytes back to a string
+
+def caesar_encrypt(key, text):
+    # shift every letter by 'key' positions, wrapping around the alphabet
+    result = []                        # we will build the output character by character
+    for ch in text:
+        if 'A' <= ch <= 'Z':          # uppercase letter
+            result.append(chr((ord(ch) - ord('A') + key) % 26 + ord('A')))  # shift within A-Z
+        elif 'a' <= ch <= 'z':        # lowercase letter
+            result.append(chr((ord(ch) - ord('a') + key) % 26 + ord('a')))  # shift within a-z
+        else:
+            result.append(ch)         # digits, spaces, commas, etc. stay the same
+    return "".join(result)            # combine the list into one string
+
+def caesar_decrypt(key, text):
+    # decrypting Caesar is just encrypting with the negative shift
+    return caesar_encrypt(-key, text)  # shifting back undoes the original shift
+
+def encrypt_text(session, text):
+    # top-level wrapper: encrypts text based on the session settings
+    if not session["secure"]:         # unsecured mode, do nothing
+        return text
+    if session["algorithm"] == "AES":
+        return aes_encrypt(session["key"], text)   # AES-256-GCM encryption
+    if session["algorithm"] == "Caesar":
+        return caesar_encrypt(session["key"], text)  # Caesar shift encryption
+    return text  # fallback, should never happen
+
+def decrypt_text(session, text):
+    # top-level wrapper: decrypts text based on the session settings
+    if not session["secure"]:         # unsecured mode, do nothing
+        return text
+    if session["algorithm"] == "AES":
+        return aes_decrypt(session["key"], text)   # AES-256-GCM decryption
+    if session["algorithm"] == "Caesar":
+        return caesar_decrypt(session["key"], text)  # Caesar shift decryption
+    return text  # fallback, should never happen
+
+# ============================================================
+# END OF CRYPTO HELPERS
+# ============================================================
 
 # --- INITIALIZATION ---
 BASE_DIRECTORY = Path(__file__).parent # Get the directory of the current file
@@ -573,7 +686,8 @@ def route_prompt_command(server_obj, command_text):
     return "EE,4,Unknown command"
 
 
-def handle_packet(server_obj, packet):
+def handle_packet(server_obj, packet, session):
+    # session parameter added so we can encrypt/decrypt file data when secure
     if packet == "":
         return "EE,4,Empty packet"
 
@@ -584,8 +698,9 @@ def handle_packet(server_obj, packet):
     packet_type = fields[0]
 
     if packet_type == "SS":
-        if len(fields) >= 4 and fields[1] == "RFMP" and fields[2] == "v1.0" and fields[3] == "0":
-            return "CC"
+        # accept both "0" (unsecured) and "1" (secured) as valid flags
+        if len(fields) >= 4 and fields[1] == "RFMP" and fields[2] == "v1.0" and fields[3] in ("0", "1"):
+            return "CC"  # the actual secure setup is handled in handle_client
         return "EE,0,Invalid handshake"
 
     if packet_type == "CM":
@@ -599,9 +714,11 @@ def handle_packet(server_obj, packet):
             return route_prompt_command(server_obj, payload)
 
         if action == "openRead":
-            data = server_obj.open_read(payload)
+            data = server_obj.open_read(payload)  # read the raw file contents
             if data is None:
                 return "EE,1,File not found or access denied."
+            # if secure mode is on, encrypt the file contents before sending
+            data = encrypt_text(session, data)
             return f"SC,{data}"
 
         if action == "openWrite":
@@ -612,39 +729,139 @@ def handle_packet(server_obj, packet):
     if packet_type == "DP":
         if len(fields) < 2:
             return "EE,3,Failed to write data."
-        text = fields[1]
+        text = fields[1]  # the raw or encrypted text from the client
+        # if secure mode is on, decrypt the text before writing to disk
+        try:
+            text = decrypt_text(session, text)  # decrypt (or pass-through if unsecured)
+        except Exception:
+            return "EE,3,Failed to write data."  # decryption failed
         return "SC" if server_obj.write_data(text) else "EE,3,Failed to write data."
 
     return "EE,4,Unknown packet type"
 
 
 def handle_client(client_socket, server_obj):
+    # each client gets its own session dictionary so threads don't interfere
+    session = {
+        "secure": False,       # whether encryption is active for this connection
+        "algorithm": None,     # "AES" or "Caesar"
+        "key": None,           # the session key (bytes for AES, int for Caesar)
+        "username": None,      # the client's OS username
+        "client_pub": None,    # the client's public key (stored, not used to encrypt)
+    }
+
     try:
-        handshake = recv_frame(client_socket)
+        handshake = recv_frame(client_socket)  # first packet from client
         if handshake == "End":
             return
 
-        response = handle_packet(server_obj, handshake)
+        # parse the SS packet to check the security flag
+        ss_fields = handshake.split(",", 3)  # split into at most 4 fields
+        secure_flag = ss_fields[3] if len(ss_fields) >= 4 else "0"  # default unsecured
+
+        response = handle_packet(server_obj, handshake, session)  # validate the handshake
         if response == "End":
             return
 
         if response != "CC":
-            send_frame(client_socket, response)
+            send_frame(client_socket, response)  # send back the error
             return
 
-        send_frame(client_socket, "CC")
+        if secure_flag == "1":
+            # --- SECURED SETUP PHASE ---
+            # step 1: generate a fresh RSA key pair just for this connection
+            server_private_key = generate_rsa_keypair()
+            server_public_key = server_private_key.public_key()  # derive the public key
 
+            # step 2: send CC,<server_public_key_b64> to the client
+            server_pub_b64 = public_key_to_b64(server_public_key)  # serialize to base64
+            send_frame(client_socket, build("CC", server_pub_b64))
+
+            # step 3: read the EC packet from the client
+            ec_raw = recv_frame(client_socket)  # expecting EC,<algo>,<enc_key>,<user:pubkey>
+            ec_fields = ec_raw.split(",", 3)  # split into at most 4 fields (maxsplit 3)
+
+            # validate the EC packet structure
+            if len(ec_fields) < 4 or ec_fields[0] != "EC":
+                send_frame(client_socket, build("EE", "0", "Invalid key exchange packet"))
+                return
+
+            algorithm = ec_fields[1]          # "AES" or "Caesar"
+            enc_key_b64 = ec_fields[2]        # the encrypted session key in base64
+            user_and_pub = ec_fields[3]        # "username:client_public_key_b64"
+
+            # validate the algorithm choice
+            if algorithm not in ("AES", "Caesar"):
+                send_frame(client_socket, build("EE", "0", "Unsupported algorithm"))
+                return
+
+            # split the last field at the first colon to get username and client pub key
+            colon_pos = user_and_pub.find(":")  # find the first colon
+            if colon_pos == -1:
+                send_frame(client_socket, build("EE", "0", "Missing client public key"))
+                return
+
+            username = user_and_pub[:colon_pos]             # everything before the colon
+            client_pub_b64 = user_and_pub[colon_pos + 1:]   # everything after the colon
+
+            try:
+                # decrypt the session key using the server's private RSA key
+                raw_key = rsa_decrypt_session_key(server_private_key, enc_key_b64)
+            except Exception:
+                send_frame(client_socket, build("EE", "0", "Failed to decrypt session key"))
+                return
+
+            # convert the raw key bytes into the right type for the algorithm
+            if algorithm == "AES":
+                if len(raw_key) != 32:  # AES-256 needs exactly 32 bytes
+                    send_frame(client_socket, build("EE", "0", "Invalid AES key length"))
+                    return
+                session_key = raw_key  # keep as bytes for AES
+            else:
+                # Caesar key was sent as str(int).encode(), so decode it back
+                try:
+                    session_key = int(raw_key.decode("utf-8"))  # convert back to integer
+                except ValueError:
+                    send_frame(client_socket, build("EE", "0", "Invalid Caesar key"))
+                    return
+
+            # store the client's public key (just for logging, not used for encryption)
+            try:
+                client_pub_key = public_key_from_b64(client_pub_b64)  # deserialize to verify it is valid
+            except Exception:
+                send_frame(client_socket, build("EE", "0", "Invalid client public key"))
+                return
+
+            # fill in the session dictionary with the negotiated values
+            session["secure"] = True
+            session["algorithm"] = algorithm
+            session["key"] = session_key
+            session["username"] = username
+            session["client_pub"] = client_pub_key
+
+            # print info about the connection (but never print the session key!)
+            print(f"Secured connection: user={username}, algorithm={algorithm}")
+            print(f"Client public key: {client_pub_b64[:40]}...")  # show just a snippet
+
+            # step 4: tell the client the setup was successful
+            send_frame(client_socket, "SC")
+
+        else:
+            # --- UNSECURED MODE (original behavior) ---
+            send_frame(client_socket, "CC")  # simple handshake complete
+
+        # --- OPERATION PHASE (same loop for both modes) ---
         while True:
-            packet = recv_frame(client_socket)
+            packet = recv_frame(client_socket)  # wait for the next command
             if packet == "End":
                 break
 
-            response = handle_packet(server_obj, packet)
+            response = handle_packet(server_obj, packet, session)  # pass session along
             if response == "End":
                 break
 
             if response:
-                send_frame(client_socket, response)
+                send_frame(client_socket, response)  # send the result back
 
     except (ConnectionError, OSError, TimeoutError):
         pass
@@ -656,7 +873,8 @@ def handle_client(client_socket, server_obj):
         client_socket.close()
 
 
-def start_server(host="0.0.0.0", port=9009, backlog=5):
+
+def start_server(host="127.0.0.1", port=9009, backlog=5):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind((host, port))
