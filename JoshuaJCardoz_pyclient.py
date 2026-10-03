@@ -245,13 +245,28 @@ def setup(sock, secure_mode, algorithm_choice):
         print("Unexpected packet during key exchange")
         return None
 
+def print_server_block(data):
+    text = str(data).strip()
+    print() 
+    print("=======")
+    print("Server Response:")
+    print("=======")
+    print()
+    print()
+    print(text if text else "")
+    print()
+    print()
+    print("=======")
+    print()
+
+
 def handle_response(sock): #default response handler after sending commands
     reply = recv_frame(sock) 
     parts = parse(reply, 3)
 
     if parts[0] == "SC": #checks first element if "SC" -> success
         if len(parts) > 1: #checks for payload 
-            print(parts[1])
+            print_server_block(parts[1])
         return True
     elif parts[0] == "EE": #checks first element if "EE" -> error code
         code = parts[1] if len(parts) > 1 else "" #extracts error code
@@ -276,7 +291,7 @@ def openRead(sock, filename, session): #takes input of socket, filename, and ses
             except Exception:
                 print("Error: Failed to decrypt file contents")
                 return False
-            print(file_contents)
+            print_server_block(file_contents)
         return True
 
     elif parts[0] == "EE": #if error it outputs the error code

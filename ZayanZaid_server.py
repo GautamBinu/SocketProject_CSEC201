@@ -715,7 +715,7 @@ def handle_packet(server_obj, packet, session):
         # accept both "0" (unsecured) and "1" (secured) as valid flags
         if len(fields) >= 4 and fields[1] == "RFMP" and fields[2] == "v1.0" and fields[3] in ("0", "1"):
             return "CC"  # the actual secure setup is handled in handle_client
-        return "EE,0,Invalid handshake"
+        return "EE,4,Invalid handshake"
 
     if packet_type == "CM":
         if len(fields) < 3:
@@ -807,7 +807,7 @@ def handle_client(client_socket, server_obj):
 
             # validate the EC packet structure
             if len(ec_fields) < 4 or ec_fields[0] != "EC":
-                send_frame(client_socket, build("EE", "0", "Invalid key exchange packet"))
+                send_frame(client_socket, build("EE", "4", "Invalid key exchange packet"))
                 return
 
             algorithm = ec_fields[1]          # "AES" or "Caesar"
@@ -817,13 +817,13 @@ def handle_client(client_socket, server_obj):
 
             # validate the algorithm choice
             if algorithm not in ("AES", "Caesar"):
-                send_frame(client_socket, build("EE", "0", "Unsupported algorithm"))
+                send_frame(client_socket, build("EE", "4", "Unsupported algorithm"))
                 return
 
             # split the last field at the first colon to get username and client pub key
             colon_pos = user_and_pub.find(":")  # find the first colon
             if colon_pos == -1:
-                send_frame(client_socket, build("EE", "0", "Missing client public key"))
+                send_frame(client_socket, build("EE", "4", "Missing client public key"))
                 return
 
             username = user_and_pub[:colon_pos]             # everything before the colon
@@ -834,7 +834,7 @@ def handle_client(client_socket, server_obj):
                 # decrypt the session key using the server's private RSA key
                 raw_key = rsa_decrypt_session_key(server_private_key, enc_key_b64)
             except Exception:
-                send_frame(client_socket, build("EE", "0", "Failed to decrypt session key"))
+                send_frame(client_socket, build("EE", "4", "Failed to decrypt session key"))
                 return
 
             log_secure_event(f"RSA-decrypted session key bytes: {raw_key.hex()}", client_address)
@@ -842,7 +842,7 @@ def handle_client(client_socket, server_obj):
             # convert the raw key bytes into the right type for the algorithm
             if algorithm == "AES":
                 if len(raw_key) != 32:  # AES-256 needs exactly 32 bytes
-                    send_frame(client_socket, build("EE", "0", "Invalid AES key length"))
+                    send_frame(client_socket, build("EE", "4", "Invalid AES key length"))
                     return
                 session_key = raw_key  # keep as bytes for AES
             else:
@@ -850,7 +850,7 @@ def handle_client(client_socket, server_obj):
                 try:
                     session_key = int(raw_key.decode("utf-8"))  # convert back to integer
                 except ValueError:
-                    send_frame(client_socket, build("EE", "0", "Invalid Caesar key"))
+                    send_frame(client_socket, build("EE", "4", "Invalid Caesar key"))
                     return
 
             log_secure_event(f"Session key established: algorithm={algorithm}, key={format_session_key(algorithm, session_key)}", client_address)
@@ -859,7 +859,7 @@ def handle_client(client_socket, server_obj):
             try:
                 client_pub_key = public_key_from_b64(client_pub_b64)  # deserialize to verify it is valid
             except Exception:
-                send_frame(client_socket, build("EE", "0", "Invalid client public key"))
+                send_frame(client_socket, build("EE", "4", "Invalid client public key"))
                 return
 
             # fill in the session dictionary with the negotiated values
