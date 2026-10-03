@@ -4,6 +4,7 @@
 #include <string.h> //strlen(), memset(), strchr(), strncmp(), snprintf(), strcspn()
 #include <stdint.h> //uint32_t, uint16_t
 #include <unistd.h> //close()
+#include <signal.h> //signal, SIGPIPE
 #include <stdio.h> //printf(), fgets()
 
 #define BUFFSIZE 4096 //max packet/message size willing to recieve
@@ -101,6 +102,10 @@ int main(int argc, char *argv[]) {
     char *body; //used to point to the payload portion of a response
     char *filename; //file we want to read from the server
 
+    int attempt = 0; //how many openRead comands were sent. incremented after every attempt
+    int success = 0; //acts like a boolean. 0: no successful openRead yet, 1: successful openRead happened. success when received "SC"
+    int connected = 1; //tracks if the connection is still live. becomes 0 if the sending or receiving fails later
+
     //checks whether the program has the appropriate amount of character for execution 
     //at minimum 3 argument required by default
     if (argc != 3 && argc != 4) {
@@ -110,6 +115,10 @@ int main(int argc, char *argv[]) {
 
     host = argv[1]; //this contains the hostname
     port = argv[2]; //this contains the port number
+
+    signal(SIGPIPE, SIG_IGN); //Ignore SIGPIPE so sending to a closed socket returns an error instead of terminating the client. 
+    //prevents the generation of a signal called SIGPIPE, which can terminate the whole program
+    //SIGPIPE is generated when the client tries to send() when the server is killed
 
     if (argc == 4) { //if filename was provided as an argument
         filename = argv[3];
@@ -187,63 +196,93 @@ int main(int argc, char *argv[]) {
     }
     printf("[<] CC - setup complete\n");
 
-    //4. operation: send openRead
-    //creates the "CM,openRead,<filename>"
-    snprintf(packet, BUFFSIZE, "CM,openRead,%s", filename); //snprintf() prevents packet from overflowing
-
-    //sends the command using the framed packet system
-    if (send_packet(sock,packet) < 0) {
-        printf("[!] failed to send comand\n");
-        close(sock);
-        return 1;
-    }
-
-    //shows the packet we sent
-    printf("[>] %s\n", packet);
-
-    //5. operation: read reply
-    //receive the openRead response
-    if (recv_packet(sock, reply, BUFFSIZE) < 0) {
-        printf("[!] no reply from server\n");
-        close(sock);
-        return 1;
-    }
-
-    //strchr finds the first comma
-    /*
-    for eg: 
-    reply: SC, hello world
-    the body points to , hello world*/
-    body = strchr(reply, ','); 
-    if (body != NULL) {
-        body++;
-    }
-
-    //if the first two character match SC its a success response
-    if (strncmp(reply, "SC", 2) == 0) {
-        printf("[<] SC - contents of %s:\n%s\n", filename, body ? body : ""); //short version of if body != NULL print body else print ""
-    } else if (strncmp(reply, "EE", 2) == 0) { //error response
-        char *desc = (body != NULL) ? strchr(body, ',') : NULL; //if body exists, look inside for next comma, else set desc to null
-
-        if (desc != NULL) {
-            *desc = '\0'; //rpelaces second comma with '\0'
-            desc++; //moves past the '\0'(original comma) and moves to error description
-            printf("[!] EE - error %s: %s\n", body, desc);
+    for (;;) { //infinite loop. keeps running until break
+        if (attempt == 0 && argc == 4) {  //if first attempt AND filename supplied in command line, use that filename
+            filename = argv[3];
         } else {
-            printf("[!] EE - %s\n", body ? body : "unspecified error"); //EE packet sent but does not contain an error code or description
+            printf("\nEnter a filename to read (or press Enter to quit): "); //asks user for another filename
+
+            //if no line could be read, stop the loop
+            if(fgets(input, sizeof(input), stdin) == NULL) { //fgets reads a line from the keyboard and stores it in input 
+                printf("\nNo more input\n");
+                break;
+            }
+
+            //removes the extra newLine fgets() stores
+            input[strcspn(input, "\n")] = '\0'; //replaces the newLine character '\n' with the termination character '\0'
+            if (input[0] == '\0') { //check if the string is empty 
+                printf("Done\n");
+                break;
+            }
+            filename = input;
         }
-    } else { //anything but "SC" or "EE" is unexpected 
-        printf("[!] unexpected reply: %s\n", reply);
+        attempt++; //aafter filename acdquired, the attempt counter is incremented 
+        
+        //4. operation: send openRead
+        //creates the "CM,openRead,<filename>"
+        snprintf(packet, BUFFSIZE, "CM,openRead,%s", filename); //snprintf() prevents packet from overflowing
+        
+        //sends the command using the framed packet system
+        if (send_packet(sock,packet) < 0) {
+            printf("[!] failed to send comand\n");
+            connected = 0;
+            break;
+        }
+        
+        //shows the packet we sent
+        printf("[>] %s\n", packet);
+        
+        //5. operation: read reply
+        //receive the openRead response
+        if (recv_packet(sock, reply, BUFFSIZE) < 0) {
+            printf("[!] no reply from server\n");
+            connected = 0;
+            break;
+        }
+        
+        //strchr finds the first comma
+        /*
+        for eg: 
+        reply: SC, hello world
+        the body points to , hello world*/
+        body = strchr(reply, ','); 
+        if (body != NULL) {
+            body++;
+        }
+        
+        //if the first two character match SC its a success response
+        if (strncmp(reply, "SC", 2) == 0) {
+            printf("[<] SC - contents of %s:\n%s\n", filename, body ? body : ""); //short version of if body != NULL print body else print ""
+            success = 1;
+            break;
+        } else if (strncmp(reply, "EE", 2) == 0) { //error response
+            char *desc = (body != NULL) ? strchr(body, ',') : NULL; //if body exists, look inside for next comma, else set desc to null
+            
+            if (desc != NULL) {
+                *desc = '\0'; //rpelaces second comma with '\0'
+                desc++; //moves past the '\0'(original comma) and moves to error description
+                printf("[!] EE - error %s: %s\n", body, desc);
+            } else {
+                printf("[!] EE - %s\n", body ? body : "unspecified error"); //EE packet sent but does not contain an error code or description
+            }
+            printf("[*] the connection is still open - try again\n");
+        } else { //anything but "SC" or "EE" is unexpected 
+            printf("[!] unexpected reply: %s\n", reply);
+            break;
+        }
     }
 
     //6. closing
     //tell server that client is closing session
-    send_packet(sock, "End");
-    printf("[>] End\n");
+    if (connected) { //if connected == 1, client sends "End"
+        send_packet(sock, "End");
+        printf("[>] End\n");
+    }
 
     close(sock);
-    printf("[*] session closed\n");
-    return 0;
+    printf("[*] session closed after %d attempt(s).\n", attempt);
+
+    return success ? 0 : 1; //shorter version of if(success) return 0 or else return 1
 }
 
 //old main function ##DO NOT USE##
