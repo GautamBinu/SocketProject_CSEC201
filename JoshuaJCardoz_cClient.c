@@ -8,6 +8,8 @@
 #include <stdio.h> //printf(), fgets()
 
 #define BUFFSIZE 4096 //max packet/message size willing to receive
+#define MIN_SEPARATOR 20 //shortest "=" line, so tiny files still look like a block
+#define MAX_SEPARATOR 80 //longest "=" line, so it does not wrap in a normal terminal
 
 //this function sends 'len' bytes and keeps sending until all the bytes are sent
 int send_all(int fd, const void *buff, size_t len) {
@@ -88,6 +90,42 @@ int recv_packet(int fd, char *out, size_t outsize) {
 
     out[len] = '\0'; //recv() give us raw bytes so i had to manually add the '\0' so it becomes a logically valid C string.
     return 0;
+}
+
+/*
+measures the longest line in a block of text.
+used to decide how many '=' characters the separator needs, so the separator is
+exactly as wide as the widest line of the file contents and no wider.*/
+size_t longest_line(const char *text) {
+    size_t longest = 0; //longest line found so far
+    size_t current = 0; //length of the line currently being measured
+    size_t i;
+
+    for (i = 0; text[i] != '\0'; i++) {
+        if (text[i] == '\n') { //reached the end of a line
+            if (current > longest) {
+                longest = current;
+            }
+            current = 0; //reset and start measuring the next line
+        } else {
+            current++;
+        }
+    }
+
+    if (current > longest) { //the final line has no '\n' after it, so check it here
+        longest = current;
+    }
+    return longest;
+}
+
+//prints one line made of 'length' equals signs, used above and below the file contents
+void print_separator(size_t length) {
+    size_t i;
+
+    for (i = 0; i < length; i++) {
+        putchar('=');
+    }
+    putchar('\n');
 }
 
 int main(int argc, char *argv[]) {
@@ -234,7 +272,28 @@ int main(int argc, char *argv[]) {
         
         //if the first two character match SC its a success response
         if (strncmp(reply, "SC", 2) == 0) {
-            printf("[<] SC - contents of %s:\n%s\n", filename, body ? body : ""); //short version of if body != NULL print body else print ""
+            const char *contents = body ? body : ""; //short version of if body != NULL use body else use ""
+            size_t width = longest_line(contents); //separator is as wide as the widest line
+
+            //keep the separator readable: not shorter than MIN, not wider than MAX
+            if (width < MIN_SEPARATOR) {
+                width = MIN_SEPARATOR;
+            }
+            if (width > MAX_SEPARATOR) {
+                width = MAX_SEPARATOR;
+            }
+
+            printf("[<] SC - contents of %s:\n", filename);
+            print_separator(width); //top border
+            printf("%s", contents);
+
+            //only add a newline if the contents do not already end with one, otherwise
+            //the bottom border would be pushed down by a blank line
+            if (contents[0] != '\0' && contents[strlen(contents) - 1] != '\n') {
+                putchar('\n');
+            }
+
+            print_separator(width); //bottom border
             success = 1;
             break;
         } else if (strncmp(reply, "EE", 2) == 0) { //error response
