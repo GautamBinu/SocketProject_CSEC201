@@ -243,8 +243,6 @@ class Server:
         except OSError:
             return False
 
-#DO GIT PULL - Dont del this line, just remove the comment (make the line blank)
-
     # --- FOLDER FUNCTIONS ---
 
     # mkdir
