@@ -7,12 +7,12 @@
 #include <signal.h> //signal, SIGPIPE
 #include <stdio.h> //printf(), fgets()
 
-#define BUFFSIZE 4096 //max packet/message size willing to recieve
+#define BUFFSIZE 4096 //max packet/message size willing to receive
 
 //this function sends 'len' bytes and keeps sending until all the bytes are sent
 int send_all(int fd, const void *buff, size_t len) {
     size_t total = 0; //number of bytes successfully sent
-    const char *data = buff; //convert the void buff pointer to a char pointer to read the buffer byte b byte
+    const char *data = buff; //convert the void buff pointer to a char pointer to read the buffer byte by byte
 
     while (total < len) { //loops till the total bytes is exactly 'len' bytes
         ssize_t sent = send(fd, data + total, len - total, 0);
@@ -43,7 +43,7 @@ int recv_all(int fd, void *buff, size_t len) {
         len - total : how many missing bytes to still receive
         0 : no special flags*/
 
-        if (got <= 0) { //if recv() sends 0 or any negative value means an error occoured
+        if (got <= 0) { //if recv() sends 0 or any negative value means an error occurred
             return -1;
         }
         total += (size_t)got; //add the number of bytes successfully received
@@ -80,7 +80,7 @@ int recv_packet(int fd, char *out, size_t outsize) {
     //ntohl -> Network to Host Long
 
     if (len >= outsize) { //we need the one extra space for '\0'. so received message must be smaller than the outsize
-        printf("[!] message to big: %u bytes \n", len);
+        printf("[!] message too big: %u bytes \n", len);
         return -1;
     }
 
@@ -95,14 +95,14 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in server; //stores IPv4 server address and port
     char packet[BUFFSIZE]; //used for packets we create before sending
     char reply[BUFFSIZE]; //used for packets received from the server
-    char input[256]; //used only if the user has to manually entere a file name. 256 character limit
+    char input[256]; //used only if the user has to manually enter a file name. 256 character limit
 
     char *host; //cli information
     char *port; //cli information
     char *body; //used to point to the payload portion of a response
     char *filename; //file we want to read from the server
 
-    int attempt = 0; //how many openRead comands were sent. incremented after every attempt
+    int attempt = 0; //how many openRead commands were sent. incremented after every attempt
     int success = 0; //acts like a boolean. 0: no successful openRead yet, 1: successful openRead happened. success when received "SC"
     int connected = 1; //tracks if the connection is still live. becomes 0 if the sending or receiving fails later
 
@@ -119,24 +119,6 @@ int main(int argc, char *argv[]) {
     signal(SIGPIPE, SIG_IGN); //Ignore SIGPIPE so sending to a closed socket returns an error instead of terminating the client. 
     //prevents the generation of a signal called SIGPIPE, which can terminate the whole program
     //SIGPIPE is generated when the client tries to send() when the server is killed
-
-    if (argc == 4) { //if filename was provided as an argument
-        filename = argv[3];
-    } else { //if not filename was provided as an argument, ask the user for one. 
-        printf("Enter the filename to read: ");
-        if (fgets(input, sizeof input, stdin) == NULL) { //fget keeps the newLine character '\n'
-            printf("[!] no filename given\n");
-            return 1;
-        }
-        input[strcspn(input, "\n")] = '\0'; //so i used strcspn to replace the newLine character with a termination character
-
-        //reject empty filename
-        if (input[0] =='\0') {
-            printf("[!] no filename given\n");
-            return 1;
-        }
-        filename = input; //filename now points to input array
-    }
 
     //1. connect to server
     sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -216,7 +198,7 @@ int main(int argc, char *argv[]) {
             }
             filename = input;
         }
-        attempt++; //aafter filename acdquired, the attempt counter is incremented 
+        attempt++; //after filename acquired, the attempt counter is incremented 
         
         //4. operation: send openRead
         //creates the "CM,openRead,<filename>"
@@ -224,7 +206,7 @@ int main(int argc, char *argv[]) {
         
         //sends the command using the framed packet system
         if (send_packet(sock,packet) < 0) {
-            printf("[!] failed to send comand\n");
+            printf("[!] failed to send command\n");
             connected = 0;
             break;
         }
@@ -259,7 +241,7 @@ int main(int argc, char *argv[]) {
             char *desc = (body != NULL) ? strchr(body, ',') : NULL; //if body exists, look inside for next comma, else set desc to null
             
             if (desc != NULL) {
-                *desc = '\0'; //rpelaces second comma with '\0'
+                *desc = '\0'; //replaces second comma with '\0'
                 desc++; //moves past the '\0'(original comma) and moves to error description
                 printf("[!] EE - error %s: %s\n", body, desc);
             } else {
